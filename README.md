@@ -1,1 +1,2 @@
-# magi-cal
+# Magi-Cal
+Magical Astrology Calendar
