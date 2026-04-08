@@ -700,42 +700,61 @@
             }
             return null; 
         };
+
+        const getSavedState = (key, defaultVal) => {
+            try {
+                const item = window.localStorage.getItem(key);
+                return item ? JSON.parse(item) : defaultVal;
+        } catch (e) {
+            return defaultVal;
+        }
+        };
+
         function MagiCALApp() {
+            // 1. Core App State
             const [engineReady, setEngineReady] = useState(false);
             const [isAppReady, setIsAppReady] = useState(false);
             const [date, setDate] = useState(new Date());
-            const [location, setLocation] = useState({ lat: -25.7479, lon: 28.2293, name: "Pretoria, SA" });
+
+            // 2. Persisted State (LocalStorage)
+            const [location, setLocation] = useState(() => getSavedState('magiCAL_location', { lat: -25.7479, lon: 28.2293, name: "Pretoria, SA" }));
+            const [viewMode, setViewMode] = useState(() => getSavedState('magiCAL_viewMode', 'grid')); 
+            const [calendarMode, setCalendarMode] = useState(() => getSavedState('magiCAL_calendarMode', 'week'));
+            const [mansionTab, setMansionTab] = useState(() => getSavedState('magiCAL_mansionTab', 'vedic')); 
+            const [gridCopyFilters, setGridCopyFilters] = useState(() => getSavedState('magiCAL_gridCopyFilters', { day: true, hours: true, planets: true, events: true, aspects: true, mansions: true }));
+            const [calFilters, setCalFilters] = useState(() => getSavedState('magiCAL_calFilters', { fortune: true, lunar: true, solar: true, vratas: true, sarpa: true, dignities: true, ingress: true, holidays: true }));
+            const [firstHouseLock, setFirstHouseLock] = useState(() => getSavedState('magiCAL_firstHouseLock', { type: 'sign', target: 'Aries' }));
+
+            // 3. UI & Session State (Does not need saving)
             const [showLocPicker, setShowLocPicker] = useState(false);
             const [locSearch, setLocSearch] = useState('');
             const [locResults, setLocResults] = useState([]);
             const [isLocating, setIsLocating] = useState(false);
             const [locError, setLocError] = useState('');
             const [astroData, setAstroData] = useState(null);
-            const [viewMode, setViewMode] = useState('grid'); 
-            const [calendarMode, setCalendarMode] = useState('week');
-            const [mansionTab, setMansionTab] = useState('vedic'); 
-            
             const [gridCopied, setGridCopied] = useState(false);
             const [showGridCopyMenu, setShowGridCopyMenu] = useState(false);
-            const [gridCopyFilters, setGridCopyFilters] = useState({
-                day: true, hours: true, planets: true, events: true, aspects: true, mansions: true
-            });
-            
             const [showDatePicker, setShowDatePicker] = useState(false);
             const [calendarData, setCalendarData] = useState(null);
             const [showCalSettings, setShowCalSettings] = useState(false);
             const [showSearchWizard, setShowSearchWizard] = useState(false);
             const [searchWizState, setSearchWizState] = useState({ step: 1, category: '', target: '', target2: '' });
             const [isSearching, setIsSearching] = useState(false);
-            const [calFilters, setCalFilters] = useState({ fortune: true, lunar: true, solar: true, vratas: true, sarpa: true, dignities: true, ingress: true, holidays: true });
-            
-            const [firstHouseLock, setFirstHouseLock] = useState({ type: 'sign', target: 'Aries' });
             const [showHouseModal, setShowHouseModal] = useState(false);
-
             const [toastMsg, setToastMsg] = useState('');
             const [loadingIconIdx, setLoadingIconIdx] = useState(0);
-
             const [mobileTooltip, setMobileTooltip] = useState(null);
+            const [showDaoistDropdown, setShowDaoistDropdown] = useState(false);
+
+            // --- Save to LocalStorage on Change ---
+            useEffect(() => { window.localStorage.setItem('magiCAL_location', JSON.stringify(location)); }, [location]);
+            useEffect(() => { window.localStorage.setItem('magiCAL_viewMode', JSON.stringify(viewMode)); }, [viewMode]);
+            useEffect(() => { window.localStorage.setItem('magiCAL_calendarMode', JSON.stringify(calendarMode)); }, [calendarMode]);
+            useEffect(() => { window.localStorage.setItem('magiCAL_mansionTab', JSON.stringify(mansionTab)); }, [mansionTab]);
+            useEffect(() => { window.localStorage.setItem('magiCAL_gridCopyFilters', JSON.stringify(gridCopyFilters)); }, [gridCopyFilters]);
+            useEffect(() => { window.localStorage.setItem('magiCAL_calFilters', JSON.stringify(calFilters)); }, [calFilters]);
+            useEffect(() => { window.localStorage.setItem('magiCAL_firstHouseLock', JSON.stringify(firstHouseLock)); }, [firstHouseLock]);
+            // --------------------------------------
 
 useEffect(() => {
     const handleTap = (e) => {
@@ -1410,7 +1429,12 @@ useEffect(() => {
                 
                 let foundDate = null;
                 let testD = new Date(date);
-                testD.setHours(12, 0, 0, 0); // Normalize to noon for daily reliable sweep
+                // Targeted exception: Hellenic events need to clear sunset to be recognized
+                if (searchWizState.category === 'Phase/Holiday' && ['New Moon (Deipnon)', 'First Crescent (Noumenia)', 'Full Moon', 'Eudaimon', 'Apollon'].includes(searchWizState.target)) {
+                    testD.setHours(20, 0, 0, 0); // Drop past sunset to ensure Grid View renders the event
+                } else {
+                    testD.setHours(12, 0, 0, 0); // Normalize to noon for standard sweeps
+                }
                 let stepDate = dir === 'Next' ? 1 : -1;
                 const maxIter = 365 * 5; 
                 const Astronomy = window.Astronomy;
@@ -1485,9 +1509,16 @@ useEffect(() => {
                             else if (tNum === 15) special = "Full Moon";
                             else if (tNum === 1) special = "Noumenia";
 
+                            let deity = null;
+                            if (tNum === 2) deity = "Eudaimon";
+                            else if (tNum === 10) deity = "Apollon";
+
                             if (searchWizState.target === 'Full Moon' && special === 'Full Moon') match = true;
                             else if (searchWizState.target === 'New Moon (Deipnon)' && special === 'Deipnon') match = true;
                             else if (searchWizState.target === 'First Crescent (Noumenia)' && special === 'Noumenia') match = true;
+
+                            else if (searchWizState.target === 'Eudaimon' && deity === 'Eudaimon') match = true;
+                            else if (searchWizState.target === 'Apollon' && deity === 'Apollon') match = true;
                             else {
                                 const h = getHolidays(testD, tNum, special);
                                 if (h.some(holidayStr => holidayStr.includes(searchWizState.target))) match = true;
@@ -1507,6 +1538,38 @@ useEffect(() => {
                                 if (!isHemmed(l, kLon)) allK = false;
                             }
                             if (allR || allK) match = true;
+                        }
+                        else if (searchWizState.target === 'Stellium') {
+                            const bodies = ['Sun', 'Moon', 'Mercury', 'Venus', 'Mars', 'Jupiter', 'Saturn', 'Rahu', 'Ketu'];
+                            const currentSigns = Array.from({length: 12}, () => []);
+                            
+                            // 1. Map today's planets to signs
+                            for (let p of bodies) {
+                                let l = getSidLon(getTropLon(Astronomy, p, aTime, observer), testD);
+                                currentSigns[Math.floor(l / 30)].push(p);
+                            }
+                            
+                            // Filter to actual stelliums (3+ planets) and create a unique signature string
+                            const currentSigs = currentSigns.filter(arr => arr.length >= 3).map(arr => arr.sort().join(','));
+                            
+                            if (currentSigs.length > 0) {
+                                // 2. Only do the heavy math for yesterday if we already have a hit today
+                                const yesterday = new Date(testD.getTime() - 86400000);
+                                const yTime = new Astronomy.AstroTime(yesterday);
+                                const yesterdaySigns = Array.from({length: 12}, () => []);
+                                
+                                for (let p of bodies) {
+                                    let l = getSidLon(getTropLon(Astronomy, p, yTime, observer), yesterday);
+                                    yesterdaySigns[Math.floor(l / 30)].push(p);
+                                }
+                                
+                                const yesterdaySigs = yesterdaySigns.filter(arr => arr.length >= 3).map(arr => arr.sort().join(','));
+                                
+                                // 3. A match is found ONLY if today has a stellium signature that yesterday did not
+                                if (currentSigs.some(sig => !yesterdaySigs.includes(sig))) {
+                                    match = true;
+                                }
+                            }
                         }
                     }
 
@@ -1567,14 +1630,38 @@ useEffect(() => {
     }
 
     if (gridCopyFilters.hours && astroData.hoursList?.length > 0) {
-        text += `--- TEMPORAL HOURS ---\n`;
-        astroData.hoursList.forEach(h => {
-            let tStr = h.time ? h.time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false}) : `${h.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})} - ${h.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})}`;
-            let icon = h.emoji || h.icon || '';
-            text += `${icon} ${h.name}: ${tStr}\n`;
-        });
-        text += `\n`;
+    text += `--- DAOIST DAILY SHICHEN ---\n`;
+    const currentTimeMs = date.getTime();
+    
+    // Re-calculate the 12 daily blocks centered around local solar noon
+    const noon = astroData.sunrise ? astroData.sunrise.getTime() + (astroData.sunset.getTime() - astroData.sunrise.getTime()) / 2 : currentTimeMs;
+    const shichensOnly = astroData.hoursList.filter(h => h.type === 'shichen');
+    const horseAtNoon = shichensOnly.find(h => h.name.includes('Horse') && h.start.getTime() <= noon && h.end.getTime() >= noon);
+    const brahma = astroData.hoursList.find(h => h.type === 'special' && h.name === 'Brahmamuhurtha');
+
+    let exportShichenList = [];
+    if (horseAtNoon) {
+        const horseIdx = shichensOnly.indexOf(horseAtNoon);
+        exportShichenList = shichensOnly.slice(horseIdx - 6, horseIdx + 6);
     }
+
+    exportShichenList.forEach(h => {
+        const isCur = currentTimeMs >= h.start.getTime() && currentTimeMs < h.end.getTime();
+        const curMarker = isCur ? ' [CURRENT]' : '';
+        const tStr = `${h.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})} - ${h.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})}`;
+        
+        text += `${h.emoji} ${h.name}${curMarker}: ${tStr}\n`;
+        text += `  ${h.desc}\n`;
+
+        // Inject Brahmamuhurtha if it overlaps with this specific hour block
+        if (brahma && brahma.start.getTime() >= h.start.getTime() && brahma.start.getTime() < h.end.getTime()) {
+            const bStr = `${brahma.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})} - ${brahma.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})}`;
+            text += `  ✨ Brahmamuhurtha: ${bStr}\n`;
+            text += `    ${brahma.desc}\n`;
+        }
+    });
+    text += `\n`;
+}
 
     if (gridCopyFilters.planets) {
         text += `--- PLANETARY POSITIONS ---\n`;
@@ -1926,12 +2013,6 @@ useEffect(() => {
                     dailyShichenList = shichensOnly.slice(horseIdx - 6, horseIdx + 6); // Grab exactly Rat to Pig
                 }
             }
-
-            const allHoursTooltip = astroData?.hoursList?.map(h => {
-    let tStr = h.time ? h.time.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false}) : `${h.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})} - ${h.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})}`;
-    return `${h.icon || h.emoji || ''} ${h.name}: ${tStr}`;
-}).join('\n') || 'No temporal hour data';
-
 
             if (!isAppReady) {
                 const iconNames = ['Sparkles', 'Moon', 'Sun', 'Saturn'];
@@ -2302,7 +2383,7 @@ useEffect(() => {
                                             {searchWizState.step === 2 && searchWizState.category === 'Phase/Holiday' && (
                                                 <div className="flex flex-col gap-1.5 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
                                                     <span className="text-[10px] text-slate-400 mb-1 font-medium">Phase / Holiday Event...</span>
-                                                    {['Full Moon', 'New Moon (Deipnon)', 'First Crescent (Noumenia)', 'Mahashivratri', 'Diwali', 'Easter Sunday', 'Ramadan Starts', 'Eid al-Fitr', 'Ash Wed (Lent Starts)', 'March Equinox', 'June Solstice', 'September Equinox', 'December Solstice', 'Christmas Day', 'Lunar New Year'].map(t => (
+                                                    {['Full Moon', 'New Moon (Deipnon)', 'First Crescent (Noumenia)', 'Eudaimon', 'Apollon', 'Mahashivratri', 'Diwali', 'Easter Sunday', 'Ramadan Starts', 'Eid al-Fitr', 'Ash Wed (Lent Starts)', 'March Equinox', 'June Solstice', 'September Equinox', 'December Solstice', 'Christmas Day', 'Lunar New Year'].map(t => (
                                                         <button key={t} onClick={() => setSearchWizState({...searchWizState, target: t, step: 'FINAL'})} className="w-full text-left py-1.5 px-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-200">{t}</button>
                                                     ))}
                                                     <button onClick={() => setSearchWizState({...searchWizState, step: 1})} className="text-[10px] text-slate-500 mt-2 text-left hover:text-slate-300 uppercase font-bold">← Back</button>
@@ -2322,8 +2403,11 @@ useEffect(() => {
                                             {searchWizState.step === 2 && searchWizState.category === 'Yoga' && (
                                                 <div className="flex flex-col gap-1.5">
                                                     <span className="text-[10px] text-slate-400 mb-1 font-medium">Yoga Event...</span>
-                                                    {['Kala Sarpa'].map(t => (
-                                                        <button key={t} onClick={() => setSearchWizState({...searchWizState, target: t, step: 'FINAL'})} className="w-full text-left py-1.5 px-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-200 flex items-center gap-1.5"><Icon name="AlertTriangle" className="w-3 h-3 text-emerald-400"/> {t}</button>
+                                                    {['Kala Sarpa', 'Stellium'].map(t => (
+                                                        <button key={t} onClick={() => setSearchWizState({...searchWizState, target: t, step: 'FINAL'})} className="w-full text-left py-1.5 px-2 bg-slate-800 hover:bg-slate-700 rounded text-xs text-slate-200 flex items-center gap-1.5">
+                                                            {t === 'Kala Sarpa' ? <Icon name="AlertTriangle" className="w-3 h-3 text-emerald-400"/> : <span className="text-purple-400 font-bold leading-none px-0.5">☌</span>} 
+                                                            {t}
+                                                        </button>
                                                     ))}
                                                     <button onClick={() => setSearchWizState({...searchWizState, step: 1})} className="text-[10px] text-slate-500 mt-2 text-left hover:text-slate-300 uppercase font-bold">← Back</button>
                                                 </div>
@@ -2435,56 +2519,76 @@ useEffect(() => {
                                     {/* Center Space (Perfectly Locked Flexbox) */}
                                     <div className="col-start-2 col-span-2 row-start-2 row-span-2 bg-slate-900/40 backdrop-blur-sm rounded-xl md:rounded-2xl border border-slate-700/50 shadow-inner p-2 md:p-3 flex flex-col overflow-hidden min-h-0 min-w-0 w-full h-full">
                                         
-                                        {/* Center Event Chips (Locked height, scrolls internally if needed) */}
-                                        <div className="shrink-0 flex flex-wrap justify-center items-center gap-1 md:gap-1.5 overflow-y-auto max-h-[80px] custom-scrollbar pb-1.5 md:pb-2 border-b border-slate-800/40">
-                                            {(astroData?.holidays?.length > 0 || astroData?.rxEvents?.length > 0 || astroData?.solarEvent || astroData?.lunarEvent || astroData?.eclipseEvent || astroData?.isSarpa || astroData?.specialPhaseObj || astroData?.tithiMarker || astroData?.transits?.length > 0 || astroData?.dignities?.ruling?.length > 0 || astroData?.dignities?.exalted?.length > 0 || astroData?.dignities?.debilitated?.length > 0 || astroData?.deityMarkerObj) ? (
-                                                <>
-                                                {astroData.holidays && astroData.holidays.map((h, i) => (
-                                                    <span key={`h-${i}`} title={h} className="text-[9px] font-medium rounded border bg-blue-900/20 border-blue-500/30 text-blue-300 px-2 py-0.5 h-fit cursor-help">{h}</span>
-                                                ))}
-                                                {astroData?.deityMarkerObj && (
-    <span
-        title={`${EVENT_TOOLTIPS[astroData.deityMarkerObj.name]}\n\nValid until ${astroData.deityMarkerObj.expires ? astroData.deityMarkerObj.expires.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: false}) : 'Unknown'}`}
-        className="text-[9px] uppercase font-bold text-orange-400 bg-orange-950/40 px-2 py-0.5 rounded border border-orange-900/30 h-fit cursor-help"
-    >
-        ✨ {astroData.deityMarkerObj.name}
-    </span>
-)}
+                                        {/* Center Event Chips - FLATTENED FOR MOBILE BABEL STABILITY */}
+                                        <div className="shrink-0 flex flex-wrap justify-center content-start gap-1 md:gap-1.5 overflow-y-auto max-h-[120px] custom-scrollbar pb-1.5 md:pb-2 border-b border-slate-800/40">
+                                            
+                                            {/* 1. ECLIPSES (Standalone Render) */}
+                                            {astroData?.eclipseEvent && (
+                                                <a 
+                                                    onClick={(e) => handleEclipseClick(e, astroData.eclipseEvent, date)}
+                                                    title={`${astroData.eclipseEvent}\nHigh impact karmic alignment. Click to search.`} 
+                                                    className="text-[9px] font-bold rounded border bg-rose-900/20 border-rose-500/30 text-rose-400 px-2 py-0.5 flex items-center justify-center gap-1 shrink-0 whitespace-nowrap shadow-sm cursor-pointer hover:bg-rose-900/40 transition-colors"
+                                                >
+                                                    <span>{astroData.eclipseEvent.includes('Solar') ? '☀️' : '🌑'}</span> 
+                                                    <span>{astroData.eclipseEvent}</span>
+                                                </a>
+                                            )}
 
-{astroData?.specialPhaseObj && (
-    <span
-        title={`${EVENT_TOOLTIPS[astroData.specialPhaseObj.name]}\n\nValid until ${astroData.specialPhaseObj.expires ? astroData.specialPhaseObj.expires.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: false}) : 'Unknown'}`}
-        className={`text-[9px] font-bold rounded border px-2 py-0.5 h-fit cursor-help ${
-            astroData.specialPhaseObj.name.includes('Full') ? 'bg-amber-900/20 border-yellow-500/50 text-yellow-400' 
-            : astroData.specialPhaseObj.name.includes('Deipnon') ? 'bg-purple-900/30 border-purple-500/50 text-purple-400' 
-            : 'bg-cyan-900/30 border-cyan-500/50 text-cyan-300'
-        }`}
-    >
-        {astroData.specialPhaseObj.name.includes('Full') ? '🌕' : astroData.specialPhaseObj.name.includes('Deipnon') ? '🌑' : '🌒'} {astroData.specialPhaseObj.name}
-    </span>
-)}
-                                                
-                                                {astroData.tithiMarker && <span title={EVENT_TOOLTIPS[astroData.tithiMarker]} className="text-[9px] font-bold rounded border bg-fuchsia-900/20 border-fuchsia-500/30 text-fuchsia-400 px-2 py-0.5 h-fit cursor-help">✨ {astroData.tithiMarker} Vrata</span>}
-                                                {astroData.isSarpa && <span title="Kala Sarpa Yoga: All planets hemmed between Rahu and Ketu. Intense karmic period, fated events." className="text-[9px] font-bold rounded bg-emerald-900/20 border border-emerald-500/30 text-emerald-400 flex items-center gap-1 px-2 py-0.5 h-fit cursor-help"><Icon name="AlertTriangle" className="w-2.5 h-2.5" /> Kala Sarpa</span>}
-                                                
-                                                {astroData?.rxEvents?.map((rx, idx) => (
-                                                    <span key={`rx-${idx}`} title={`${rx.planet} ${rx.type === 'Rx' ? 'Retrograde (energy turned inward)' : rx.type.includes('Start') ? 'Stations Retrograde (energy turns inward)' : 'Stations Direct (energy moves forward)'}`} className={`text-[9px] font-bold rounded border px-2 py-0.5 flex items-center gap-1 h-fit cursor-help ${rx.type.includes('Start') ? 'bg-red-900/40 border-red-500/50 text-red-300' : rx.type.includes('End') ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'bg-orange-900/30 border-orange-500/40 text-orange-300'}`}>
-                                                        {PLANET_GLYPHS[rx.planet]} {rx.planet.slice(0,3)} {rx.type === 'Rx' ? 'Rx' : rx.type.includes('Start') ? 'RxS' : 'RxE'}
-                                                    </span>
-                                                ))}
+                                            {/* 2. LUNAR PHASES & HELLENIC EVENTS */}
+                                            {astroData?.specialPhaseObj && (
+                                                <div title={`${EVENT_TOOLTIPS[astroData.specialPhaseObj.name] || ''}\n\nValid until ${astroData.specialPhaseObj.expires ? astroData.specialPhaseObj.expires.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', hour12: false}) : 'Unknown'}`} className={`text-[9px] font-bold rounded border px-2 py-0.5 flex items-center shrink-0 whitespace-nowrap shadow-sm cursor-help ${astroData.specialPhaseObj.name.includes('Full') ? 'bg-amber-900/20 border-yellow-500/50 text-yellow-400' : astroData.specialPhaseObj.name.includes('Deipnon') ? 'bg-purple-900/30 border-purple-500/50 text-purple-400' : 'bg-cyan-900/30 border-cyan-500/50 text-cyan-300'}`}>
+                                                    <span>{astroData.specialPhaseObj.name.includes('Full') ? '🌕' : astroData.specialPhaseObj.name.includes('Deipnon') ? '🌑' : '🌒'}</span>
+                                                    <span className="ml-1">{astroData.specialPhaseObj.name}</span>
+                                                </div>
+                                            )}
 
-                                                {astroData?.dignities?.ruling?.map(p => <span key={`r-${p}`} title={`${p} Ruling. ${DIGNITY_TOOLTIPS.ruling}`} className="text-[9px] font-bold rounded border bg-yellow-900/30 border-yellow-500/30 text-yellow-400 flex items-center gap-1 px-2 py-0.5 h-fit cursor-help">{PLANET_GLYPHS[p]} {p.slice(0,3)} Rul</span>)}
-                                                    {astroData?.dignities?.exalted?.map(p => <span key={`e-${p}`} title={`${p} Exalted. ${DIGNITY_TOOLTIPS.exalted}`} className="text-[9px] font-bold rounded border bg-green-900/30 border-green-500/30 text-green-400 flex items-center gap-1 px-2 py-0.5 h-fit cursor-help">{PLANET_GLYPHS[p]} {p.slice(0,3)} Exa</span>)}
-                                                    {astroData?.dignities?.debilitated?.map(p => <span key={`d-${p}`} title={`${p} Debilitated. ${DIGNITY_TOOLTIPS.debilitated}`} className="text-[9px] font-bold rounded border bg-red-900/30 border-red-500/30 text-red-400 flex items-center gap-1 px-2 py-0.5 h-fit cursor-help">{PLANET_GLYPHS[p]} {p.slice(0,3)} Deb</span>)}
+                                            {/* 3. SOLAR EVENTS */}
+                                            {astroData?.solarEvent && (
+                                                <a 
+                                                    onClick={(e) => handleSolarEventClick(e, astroData.solarEvent, date)}
+                                                    title={`☀️ ${astroData.solarEvent}\nSignificant shift in solar/seasonal energy. Click to search.`} 
+                                                    className="text-[9px] font-bold rounded border bg-amber-900/20 border-amber-500/30 text-amber-400 px-2 py-0.5 flex items-center shrink-0 whitespace-nowrap shadow-sm cursor-pointer hover:bg-amber-900/40 transition-colors"
+                                                >
+                                                    ☀️ {astroData.solarEvent}
+                                                </a>
+                                            )}          
 
-                                                {astroData.transits && astroData.transits.map((t, idx) => (
-                                                    <div key={idx} title={formatIngressTooltip(t)} className="text-[9px] md:text-[10px] px-1.5 py-0.5 rounded bg-slate-950/50 border border-slate-700 flex items-center justify-center gap-1 w-fit h-fit mt-0.5 cursor-help">
-                                                        <span className={`${PLANET_COLORS[t.planet]}`}>{PLANET_GLYPHS[t.planet]}</span>
-                                                        <span className="text-slate-400 font-bold uppercase tracking-wider truncate text-[8px] md:text-[9px]">{t.planet.slice(0,3)} ➡️ {t.to.slice(0,3)}</span>
-                                                    </div>
-                                                ))}
-                                                </>
-                                            ) : null}
+                                            {/* 4. DEITY MARKERS (Eudaimon / Apollon) */}
+                                            {astroData?.deityMarkerObj && (
+                                                <div title={`${EVENT_TOOLTIPS[astroData.deityMarkerObj.name] || ''}`} className="text-[9px] uppercase font-bold text-orange-400 bg-orange-950/40 px-2 py-0.5 rounded border border-orange-900/30 flex items-center shrink-0 whitespace-nowrap shadow-sm cursor-help">
+                                                    ✨ {astroData.deityMarkerObj.name}
+                                                </div>
+                                            )}
+
+                                            {/* 5. VRATAS & YOGAS */}
+                                            {astroData?.tithiMarker && <div title={EVENT_TOOLTIPS[astroData.tithiMarker]} className="text-[9px] font-bold rounded border bg-fuchsia-900/20 border-fuchsia-500/30 text-fuchsia-400 px-2 py-0.5 flex items-center shrink-0 whitespace-nowrap shadow-sm cursor-help">✨ {astroData.tithiMarker} Vrata</div>}
+                                            {astroData?.isSarpa && <div title="Kala Sarpa Yoga: All planets hemmed between Rahu and Ketu." className="text-[9px] font-bold rounded bg-emerald-900/20 border border-emerald-500/30 text-emerald-400 flex items-center gap-1 px-2 py-0.5 shrink-0 whitespace-nowrap shadow-sm cursor-help"><Icon name="AlertTriangle" className="w-2.5 h-2.5" /> Kala Sarpa</div>}
+                                            
+                                            {/* 6. HOLIDAYS */}
+                                            {astroData?.holidays && astroData.holidays.map((h, i) => (
+                                                <div key={`h-${i}`} title={h} className="text-[9px] font-medium rounded border bg-blue-900/20 border-blue-500/30 text-blue-300 px-2 py-0.5 flex items-center shrink-0 whitespace-nowrap shadow-sm cursor-help">{h}</div>
+                                            ))}
+
+                                            {/* 7. LUNAR EQUATORS */}
+                                            {astroData?.lunarEvent && <div title={`⚖️ ${astroData.lunarEvent}\nShift in Moon's declination`} className="text-[9px] font-bold rounded border bg-indigo-900/20 border-indigo-500/30 text-indigo-300 px-2 py-0.5 flex items-center shrink-0 whitespace-nowrap shadow-sm cursor-help">⚖️ {astroData.lunarEvent}</div>}
+
+                                            {/* 8. RETROGRADES & DIGNITIES */}
+                                            {astroData?.rxEvents?.map((rx, idx) => (
+                                                <div key={`rx-${idx}`} title={`${rx.planet} ${rx.type === 'Rx' ? 'Retrograde' : rx.type.includes('Start') ? 'Stations Retrograde' : 'Stations Direct'}`} className={`text-[9px] font-bold rounded border px-2 py-0.5 flex items-center gap-1 shrink-0 whitespace-nowrap shadow-sm cursor-help ${rx.type.includes('Start') ? 'bg-red-900/40 border-red-500/50 text-red-300' : rx.type.includes('End') ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'bg-orange-900/30 border-orange-500/40 text-orange-300'}`}>
+                                                    {PLANET_GLYPHS[rx.planet]} {rx.planet.slice(0,3)} {rx.type === 'Rx' ? 'Rx' : rx.type.includes('Start') ? 'RxS' : 'RxE'}
+                                                </div>
+                                            ))}
+                                            {astroData?.dignities?.ruling?.map(p => <div key={`r-${p}`} title={`${p} Ruling`} className="text-[9px] font-bold rounded border bg-yellow-900/30 border-yellow-500/30 text-yellow-400 flex items-center gap-1 px-2 py-0.5 shrink-0 whitespace-nowrap shadow-sm cursor-help">{PLANET_GLYPHS[p]} {p.slice(0,3)} Rul</div>)}
+                                            {astroData?.dignities?.exalted?.map(p => <div key={`e-${p}`} title={`${p} Exalted`} className="text-[9px] font-bold rounded border bg-green-900/30 border-green-500/30 text-green-400 flex items-center gap-1 px-2 py-0.5 shrink-0 whitespace-nowrap shadow-sm cursor-help">{PLANET_GLYPHS[p]} {p.slice(0,3)} Exa</div>)}
+                                            {astroData?.dignities?.debilitated?.map(p => <div key={`d-${p}`} title={`${p} Debilitated`} className="text-[9px] font-bold rounded border bg-red-900/30 border-red-500/30 text-red-400 flex items-center gap-1 px-2 py-0.5 shrink-0 whitespace-nowrap shadow-sm cursor-help">{PLANET_GLYPHS[p]} {p.slice(0,3)} Deb</div>)}
+                                            
+                                            {/* 9. TRANSITS */}
+                                            {astroData.transits && astroData.transits.map((t, idx) => (
+                                                <div key={idx} title={formatIngressTooltip(t)} className="text-[9px] md:text-[10px] px-1.5 py-0.5 rounded bg-slate-950/50 border border-slate-700 flex items-center justify-center gap-1 shrink-0 whitespace-nowrap mt-0.5 shadow-sm cursor-help">
+                                                    <span className={`${PLANET_COLORS[t.planet]}`}>{PLANET_GLYPHS[t.planet]}</span>
+                                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[8px] md:text-[9px]">{t.planet.slice(0,3)} ➡️ {t.to.slice(0,3)}</span>
+                                                </div>
+                                            ))}
                                         </div>
 
                                         {/* Aspects List (The TRUE scrollable area) */}
@@ -2555,14 +2659,34 @@ useEffect(() => {
                                     <div className="flex-1 min-h-0 bg-slate-900/80 border border-slate-800 rounded-2xl shadow-xl flex flex-col p-3 md:p-4 gap-3 relative z-40">
                                         {/* Top Row: Hour & Decan */}
                                         <div className="flex flex-col md:flex-row gap-2 md:gap-3 shrink-0">
+                                            
                                             {/* Daoist Hour Slot */}
-                                            <div className="flex-1 bg-slate-950/40 border border-slate-800/60 p-2 md:p-3 rounded-xl flex flex-col items-center justify-center cursor-help shadow-sm group hover:bg-slate-900/60 transition-colors relative z-50 text-center" title={allHoursTooltip}>
-                                                {/* Tooltip */}
-                                                <div className="absolute top-full left-0 mt-2 w-64 md:w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-3 z-[100] flex-col gap-2 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-200 hidden md:flex text-left">
-                                                    <div className="text-xs font-bold text-indigo-400 uppercase tracking-widest border-b border-slate-700/50 pb-1 mb-1">Daoist Daily Shichen</div>
+                                            <button 
+                                                type="button"
+                                                className="flex-1 bg-slate-950/40 border border-slate-800/60 p-2 md:p-3 rounded-xl flex flex-col items-center justify-center cursor-pointer shadow-sm hover:bg-slate-900/60 transition-colors relative z-50 text-center outline-none appearance-none"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    setShowDaoistDropdown(!showDaoistDropdown);
+                                                }}
+                                                onMouseEnter={() => setShowDaoistDropdown(true)}
+                                                onMouseLeave={() => setShowDaoistDropdown(false)}
+                                            >
+                                                {/* Dropdown Menu (Pure React State, No CSS Hover Bugs) */}
+                                                <div 
+                                                    className={`absolute top-full left-0 sm:left-1/2 sm:-translate-x-1/2 mt-2 w-[85vw] max-w-[280px] md:max-w-none md:w-72 bg-slate-900 border-2 border-indigo-500/50 md:border md:border-slate-700 rounded-xl shadow-2xl p-3 z-[100] flex-col gap-2 text-left cursor-default transition-opacity duration-200 ${showDaoistDropdown ? 'flex opacity-100 animate-[fadeIn_0.2s_ease-out]' : 'hidden opacity-0 pointer-events-none'}`}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    <div className="flex justify-between items-center border-b border-slate-700/50 pb-2 mb-1">
+                                                        <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Daoist Daily Shichen</span>
+                                                        <div onClick={(e) => { e.stopPropagation(); setShowDaoistDropdown(false); }} className="text-slate-300 bg-slate-800 hover:bg-slate-700 rounded p-1.5 md:hidden cursor-pointer shadow-sm">
+                                                            <Icon name="X" className="w-3.5 h-3.5"/>
+                                                        </div>
+                                                    </div>
                                                     {dailyShichenList.map((h, i) => {
                                                         const isCur = currentShichen && h.start.getTime() === currentShichen.start.getTime();
                                                         const hasBrahma = brahma && brahma.start.getTime() >= h.start.getTime() && brahma.start.getTime() < h.end.getTime();
+                                                        const isThisBrahmaActive = hasBrahma && isBrahmaActive;
+                                                        
                                                         return (
                                                             <div key={i} className={`flex flex-col gap-0.5 ${isCur ? 'bg-green-900/20 border-l-2 border-green-500 pl-2' : 'pl-2 border-l-2 border-transparent'}`}>
                                                                 <div className={`text-[11px] font-bold ${isCur ? 'text-green-400' : 'text-slate-300'}`}>
@@ -2570,17 +2694,19 @@ useEffect(() => {
                                                                 </div>
                                                                 <div className={`text-[9px] leading-tight ${isCur ? 'text-green-300/70' : 'text-slate-500'}`}>{h.desc}</div>
                                                                 {hasBrahma && (
-                                                                    <div className="ml-3 mt-1 mb-1 pl-2 border-l-2 border-yellow-500/50 flex flex-col gap-0.5">
-                                                                        <div className="text-[10px] font-bold text-yellow-400 flex items-center gap-1">
-                                                                            ✨ Brahmamuhurtha <span className="text-yellow-500/70 font-mono ml-1 text-[9px]">{brahma.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12:false})} - {brahma.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12:false})}</span>
+                                                                    <div className={`ml-3 mt-1 mb-1 pl-2 flex flex-col gap-0.5 ${isThisBrahmaActive ? 'bg-yellow-900/20 border-l-2 border-yellow-500' : 'border-l-2 border-yellow-500/50'}`}>
+                                                                        <div className={`text-[10px] font-bold flex items-center gap-1 ${isThisBrahmaActive ? 'text-yellow-300' : 'text-yellow-400'}`}>
+                                                                            ✨ Brahmamuhurtha <span className={`${isThisBrahmaActive ? 'text-yellow-400/80' : 'text-yellow-500/70'} font-mono ml-1 text-[9px]`}>{brahma.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12:false})} - {brahma.end.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12:false})}</span>
                                                                         </div>
-                                                                        <div className="text-[9px] leading-tight text-yellow-300/70">{brahma.desc}</div>
+                                                                        <div className={`text-[9px] leading-tight ${isThisBrahmaActive ? 'text-yellow-200/80' : 'text-yellow-300/70'}`}>{brahma.desc}</div>
                                                                     </div>
                                                                 )}
                                                             </div>
                                                         )
                                                     })}
                                                 </div>
+
+                                                {/* Main Slot Face */}
                                                 {isBrahmaActive && (
                                                     <div className="text-[9px] font-bold text-yellow-300 flex items-center justify-center gap-1 mb-1 bg-yellow-900/20 w-fit px-2 py-0.5 rounded-full border border-yellow-500/30 mx-auto">✨ Brahmamuhurtha</div>
                                                 )}
@@ -2591,7 +2717,7 @@ useEffect(() => {
                                                 <div className="text-[9px] md:text-[10px] font-mono text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded-full border border-slate-700 whitespace-nowrap mt-1">
                                                     Until {currentShichen?.end?.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', hour12: false})}
                                                 </div>
-                                            </div>
+                                            </button>
 
                                             {/* Solar Decan Slot */}
                                             <div className="flex-1 bg-amber-900/10 border border-amber-500/20 p-2 md:p-3 rounded-xl flex flex-col items-center justify-center gap-1.5 md:gap-2 cursor-help shadow-sm backdrop-blur-md transition-colors text-center" title={sunTooltipText}>
